@@ -1,11 +1,8 @@
 """
 SimCF-DTBA
 ==========
-Similarity-Grounded Contrastive Fusion for Cold-Split Drug-Target Binding
-Affinity Prediction.
-
-Reference implementation accompanying the manuscript.
-
+Artificial Intelligence in Drug Discovery: Accelerating Precision Medicine for Novel Compounds and Targets via Contrastive Learning
+Journal: Artificial Intelligence in Health
 Modules
 -------
 config       hyperparameters, device, CSV schema, seeding
