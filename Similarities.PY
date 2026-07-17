@@ -1,10 +1,10 @@
 """
 Similarity oracles and sequence clustering.
 
-  * Tanimoto over ECFP4                     (Sec. 3.5)
-  * Alignment-based BLOSUM62 similarity     (Sec. 3.3.3)
-  * Agreement function A(S_d, S_p)          (Sec. 3.5.2)
-  * Sequence identity + CD-HIT clustering   (Sec. 4.8)
+  * Tanimoto over ECFP4                      
+  * Alignment-based BLOSUM62 similarity      
+  * Agreement function A(S_d, S_p)           
+  * Sequence identity + CD-HIT clustering  
 
 All oracles are label-agnostic: they never see an affinity value.
 """
@@ -28,7 +28,7 @@ from .chem import clean_seq
 from .config import CFG
 
 # ---------------------------------------------------------------------------
-# Tanimoto / ECFP4 (Sec. 3.5)
+# Tanimoto / ECFP4  
 # ---------------------------------------------------------------------------
 
 _mfp_gen = rdFingerprintGenerator.GetMorganGenerator(
@@ -64,7 +64,7 @@ def tanimoto_matrix(smiles_list: Sequence[str]) -> torch.Tensor:
 
 
 # ---------------------------------------------------------------------------
-# Alignment-based BLOSUM62 (Sec. 3.3.3)
+# Alignment-based BLOSUM62  
 # ---------------------------------------------------------------------------
 
 _aligner = Align.PairwiseAligner()
@@ -96,27 +96,7 @@ def _self_score(a: str) -> float:
 
 
 def blosum62_matrix(sequences: Sequence[str]) -> torch.Tensor:
-    """
-    Pairwise BLOSUM62 evolutionary similarity (Sec. 3.3.3).
-
-    Procedure, stated explicitly so it can be written into the manuscript:
-
-      1. Global Needleman-Wunsch alignment (Biopython PairwiseAligner) with
-         the BLOSUM62 substitution matrix, gap-open -11, gap-extend -1
-         (NCBI BLASTP defaults).
-      2. Length-bias removal by symmetric self-score normalisation,
-             b_ij = raw_ij / sqrt(raw_ii * raw_jj),
-         the standard normalised alignment kernel: invariant to sequence
-         length and equal to 1 for identical sequences.
-      3. Row-wise min-max normalisation to [0, 1] for comparability across
-         proteins within the batch, matching the paper's description.
-
-    Alignment is used rather than position-wise comparison so that homologous
-    sequences offset by an indel are still scored as similar.
-
-    Alignments are cached across batches and epochs, so the O(N^2) cost is
-    paid once per unique sequence pair.
-    """
+    
     seqs = [clean_seq(s, CFG["max_prot_len"]) for s in sequences]
     n = len(seqs)
     raw = np.zeros((n, n), dtype=np.float64)
@@ -136,10 +116,9 @@ def blosum62_matrix(sequences: Sequence[str]) -> torch.Tensor:
 
 def agreement_weights(S_d: torch.Tensor, S_p: torch.Tensor, rule: str) -> torch.Tensor:
     """
-    Agreement function A(S_d, S_p) (Sec. 3.5.2).
-
+    Agreement function A(S_d, S_p)  
     The paper's default is the product rule; the geometric and harmonic
-    variants are provided for the sensitivity analysis discussed in Sec. 5.
+    variants are provided for the sensitivity analysis  
     """
     if rule == "product":
         return (S_d * S_p).clamp(min=0.0)
@@ -151,14 +130,11 @@ def agreement_weights(S_d: torch.Tensor, S_p: torch.Tensor, rule: str) -> torch.
 
 
 # ---------------------------------------------------------------------------
-# Sequence identity + clustering (Sec. 4.8)
+# Sequence identity + clustering  
 # ---------------------------------------------------------------------------
 
 def sequence_identity(a: str, b: str) -> float:
-    """
-    Global alignment identity = identical positions / length of the shorter
-    sequence, matching CD-HIT's default global identity definition (-G 1).
-    """
+    
     a, b = clean_seq(a, CFG["max_prot_len"]), clean_seq(b, CFG["max_prot_len"])
     if not a or not b:
         return 0.0
@@ -175,10 +151,7 @@ def sequence_identity(a: str, b: str) -> float:
 
 def cluster_sequences_cdhit(seqs: List[str], threshold: float,
                             cdhit_bin: str) -> List[int] | None:
-    """
-    Cluster with the real CD-HIT binary when available (Sec. 4.8, ref [37]).
-    Returns a cluster id per sequence, or None if CD-HIT is not installed.
-    """
+    
     if shutil.which(cdhit_bin) is None:
         return None
     n_word = 5 if threshold >= 0.7 else 4 if threshold >= 0.6 else 3 if threshold >= 0.5 else 2
@@ -213,17 +186,7 @@ def cluster_sequences_cdhit(seqs: List[str], threshold: float,
 
 
 def cluster_sequences_greedy(seqs: List[str], threshold: float) -> List[int]:
-    """
-    CD-HIT-style greedy incremental clustering fallback (Sec. 4.8).
-
-    Sorts by decreasing length, makes the longest unassigned sequence a
-    cluster representative, and assigns any sequence with identity >=
-    threshold to that representative.  This is CD-HIT's algorithm without its
-    short-word prefilter heuristics: same clustering semantics, slower.
-
-    If you use this fallback rather than the CD-HIT binary, say so in the
-    manuscript instead of citing CD-HIT [37] directly.
-    """
+   
     order = sorted(range(len(seqs)), key=lambda i: -len(seqs[i]))
     assign = [-1] * len(seqs)
     reps: List[int] = []
@@ -243,6 +206,6 @@ def cluster_sequences_greedy(seqs: List[str], threshold: float) -> List[int]:
 
 
 def cluster_sequences(seqs: List[str], threshold: float, cfg: Dict) -> List[int]:
-    """CD-HIT if installed, else the greedy fallback."""
+    
     got = cluster_sequences_cdhit(seqs, threshold, cfg["cdhit_bin"])
     return got if got is not None else cluster_sequences_greedy(seqs, threshold)
