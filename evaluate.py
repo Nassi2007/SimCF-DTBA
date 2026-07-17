@@ -1,4 +1,4 @@
-"""Evaluation metrics: Concordance Index, MSE, Pearson r (Sec. 4.3)."""
+"""Evaluation metrics: Concordance Index, MSE, Pearson r  ."""
 
 from __future__ import annotations
 
@@ -11,12 +11,7 @@ from .config import DEVICE
 
 
 def concordance_index(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """
-    Concordance Index (Eq. 20): CI = P(y_hat_i > y_hat_j | y_i > y_j).
-
-    Vectorised over all pairs; prediction ties count 0.5.  Returns 0.5 when no
-    pair has differing true labels.
-    """
+    
     y_true = np.asarray(y_true, dtype=np.float64)
     y_pred = np.asarray(y_pred, dtype=np.float64)
     i, j = np.triu_indices(len(y_true), k=1)
@@ -36,7 +31,7 @@ def concordance_index(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 
 @torch.no_grad()
 def evaluate(model, loader, label: str = "test") -> Dict[str, float]:
-    """Run the model over a loader and report CI, MSE and Pearson r."""
+    
     from scipy.stats import pearsonr
 
     model.eval()
