@@ -1,38 +1,12 @@
-"""
-Dataset splitting protocols.
-
-`create_fold` and `create_fold_setting_cold` are faithful reimplementations of
-He et al. (2023) NHGNN-DTA `Code/split.py`
-(https://github.com/hehh77/NHGNN-DTA), itself derived from the Therapeutics
-Data Commons splitters (https://tdc.readthedocs.io).
-
-They are reproduced EXACTLY - including frac = [0.8, 0.1, 0.1] and the
-hardcoded random_state=1 for the validation draw in the random fold - so that
-SimCF-DTBA is evaluated on the SAME partitions as the published baseline
-values cited in Tables 4-5.
-
-DO NOT "clean up" these two functions.  Any deviation silently breaks
-comparability with the cited baselines, which is precisely the defect the
-reviewers flagged.
-
-Also provides the stricter protocols of Sec. 4.8:
-  * scaffold_drug  - Bemis-Murcko scaffold-disjoint
-  * seqid_target   - CD-HIT sequence-identity-disjoint (40%)
-"""
-
 from __future__ import annotations
-
 from typing import Dict, List
-
 import pandas as pd
-
 from .chem import canonical_smiles, murcko_scaffold, protein_key
 from .config import COL_AFF, COL_SMILES, COL_TKEY, COL_TSEQ
 from .similarity import cluster_sequences, sequence_identity
 
-
 # ---------------------------------------------------------------------------
-# He et al. (2023) protocol - verbatim ports
+# He et al. (2023) protocol 
 # ---------------------------------------------------------------------------
 
 def create_fold(df: pd.DataFrame, fold_seed: int, frac: List[float]) -> Dict[str, pd.DataFrame]:
@@ -51,13 +25,7 @@ def create_fold(df: pd.DataFrame, fold_seed: int, frac: List[float]) -> Dict[str
 
 def create_fold_setting_cold(df: pd.DataFrame, fold_seed: int, frac: List[float],
                              entities) -> Dict[str, pd.DataFrame]:
-    """
-    Entity-level cold split.  Verbatim port of He et al.
-    split.py::create_fold_setting_cold.
-
-    cold-drug   -> entities = ['compound_iso_smiles']
-    cold-target -> entities = ['target_key']
-    """
+   
     if isinstance(entities, str):
         entities = [entities]
     train_frac, val_frac, test_frac = frac
@@ -102,37 +70,17 @@ def create_fold_setting_cold(df: pd.DataFrame, fold_seed: int, frac: List[float]
 
 def create_fold_group(df: pd.DataFrame, fold_seed: int, frac: List[float],
                       group_col: str) -> Dict[str, pd.DataFrame]:
-    """
-    Group-disjoint split used by both stricter protocols (Sec. 4.8).
-
-    Whole groups (scaffolds, or sequence-identity clusters) are assigned
-    entirely to train, valid, or test.  Structurally identical to
-    create_fold_setting_cold but keyed on a precomputed group column.
-    """
+    
     return create_fold_setting_cold(df, fold_seed, frac, [group_col])
 
 
-# ---------------------------------------------------------------------------
-# Dispatch + verification
-# ---------------------------------------------------------------------------
 
 SPLITS = ("cold_drug", "cold_target", "cold_drug_target",
           "random", "scaffold_drug", "seqid_target")
 
 
 def build_splits(df: pd.DataFrame, split: str, seed: int, cfg: Dict):
-    """
-    Dispatch to the correct protocol.
-
-    Returns
-        (train_df, valid_df, test_df, held_drug_keys, held_prot_seqs, meta)
-
-    cold_drug / cold_target / random  -> He et al. protocol (Tables 4-6)
-    scaffold_drug / seqid_target      -> stricter protocols (Table 8)
-
-    Every protocol is asserted after the fact: if the cold property does not
-    hold, this raises rather than silently reporting an inflated score.
-    """
+  
     frac = cfg["frac"]
     meta: Dict = {"split": split, "seed": seed}
 
@@ -149,8 +97,6 @@ def build_splits(df: pd.DataFrame, split: str, seed: int, cfg: Dict):
         folds = create_fold_setting_cold(df, seed, frac, [COL_TKEY, COL_SMILES])
 
     elif split == "scaffold_drug":
-        # Sec. 4.8: group drugs by Bemis-Murcko scaffold; whole scaffolds go to
-        # one partition, so no test scaffold is ever seen during training.
         work = df.copy()
         uniq = work[COL_SMILES].drop_duplicates()
         smi2sc = {s: (murcko_scaffold(s) or "__unparsable__") for s in uniq}
@@ -161,9 +107,6 @@ def build_splits(df: pd.DataFrame, split: str, seed: int, cfg: Dict):
         folds = create_fold_group(work, seed, frac, "_scaffold")
 
     elif split == "seqid_target":
-        # Sec. 4.8: cluster targets by sequence identity; whole clusters go to
-        # one partition, so no test protein has a >=40% identity homolog in
-        # training.
         work = df.copy()
         uniq_seqs = work[COL_TSEQ].drop_duplicates().tolist()
         cl = cluster_sequences(uniq_seqs, cfg["seqid_threshold"], cfg)
@@ -178,7 +121,6 @@ def build_splits(df: pd.DataFrame, split: str, seed: int, cfg: Dict):
 
     tr, va, te = folds["train"], folds["valid"], folds["test"]
 
-    # ---- verify the protocol actually holds ------------------------------
     if split in ("cold_drug", "scaffold_drug", "cold_drug_target"):
         assert not (set(tr[COL_SMILES]) & set(te[COL_SMILES])), "cold-drug leak: train/test"
         assert not (set(va[COL_SMILES]) & set(te[COL_SMILES])), "cold-drug leak: val/test"
@@ -190,7 +132,7 @@ def build_splits(df: pd.DataFrame, split: str, seed: int, cfg: Dict):
     if split == "seqid_target":
         assert not (set(tr["_seqcluster"]) & set(te["_seqcluster"])), "seq-identity cluster leak"
 
-    # ---- entities to purge from the BindingDB pre-training corpus ---------
+   
     held_drugs: set = set()
     held_prots: set = set()
     if split in ("cold_drug", "scaffold_drug", "cold_drug_target"):
@@ -206,17 +148,7 @@ def build_splits(df: pd.DataFrame, split: str, seed: int, cfg: Dict):
 
 def filter_pretrain_corpus(df: pd.DataFrame, split: str, test_df: pd.DataFrame,
                            held_drugs: set, held_prots: set, cfg: Dict) -> pd.DataFrame:
-    """
-    Remove every BindingDB pair whose entity is held out for testing.
-
-    Sec. 4.1 requires test entities to be excluded from pre-training AND
-    supervised training.  Without this the cold-split claim is void: the model
-    would have seen the "novel" entity during contrastive pre-training.
-
-    Under the stricter protocols (Sec. 4.8) the exclusion is correspondingly
-    stricter - scaffold-level for drugs and >=40% sequence identity for
-    proteins - not merely exact matches.
-    """
+     
     before = len(df)
     out = df
 
