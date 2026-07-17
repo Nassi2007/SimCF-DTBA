@@ -1,10 +1,4 @@
-"""
-Dataset loading, column normalisation, and PyTorch data plumbing.
-
-Expects He et al.'s CSV schema
-    compound_iso_smiles, target_key, target_sequence, affinity
-Legacy `smiles,sequence,label` headers are auto-mapped.
-"""
+ 
 
 from __future__ import annotations
 
@@ -49,8 +43,6 @@ def _normalise_columns(df: pd.DataFrame, path: str) -> pd.DataFrame:
         ren[key] = COL_TKEY
     df = df.rename(columns=ren)
     if COL_TKEY not in df.columns:
-        # He et al. key cold-target on target_key; fall back to the sequence
-        # itself when no key column exists so the split stays entity-disjoint.
         df[COL_TKEY] = df[COL_TSEQ].astype(str).str.strip().str.upper()
         print(f"[data] {os.path.basename(path)}: no '{COL_TKEY}' column; "
               f"derived it from '{COL_TSEQ}'")
