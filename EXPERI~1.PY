@@ -1,12 +1,3 @@
-"""
-Experiment drivers: single runs, the architectural ablation, and the full
-table-by-table reproduction.
-
-  run_single_seed  one (dataset, split, seed, variant) run
-  run_ablation     Sec. 4.6 / Table 7, both arms on identical splits
-  run_all          Tables 4, 5, 6, 7 and 8 end to end
-"""
-
 from __future__ import annotations
 
 import json
@@ -27,15 +18,7 @@ from .train import run_curriculum, run_vanilla_training
 
 def run_single_seed(dataset: str, split: str, seed: int, cfg: Dict = CFG,
                     variant: str = "simcf") -> Dict:
-    """
-    One complete run: split -> leakage filter -> train -> evaluate -> save.
-
-    The BindingDB pre-training corpus is filtered against the test entities of
-    THIS split before Stages 1-3 ever see it (Sec. 4.1).
-    """
-    print("\n" + "#" * 74)
-    print(f"# dataset={dataset}  split={split}  seed={seed}  variant={variant}")
-    print("#" * 74)
+   
     set_seed(seed)
 
     target_path = cfg["davis_path"] if dataset == "davis" else cfg["kiba_path"]
@@ -45,9 +28,7 @@ def run_single_seed(dataset: str, split: str, seed: int, cfg: Dict = CFG,
 
     pre_df = load_dataframe(cfg["bindingdb_path"], label_agnostic=True)
     if split == "random":
-        # Sec. 4.1: the full pre-training corpus is used for the random split.
         pre_use = pre_df
-        print("[pretrain] random split -> full corpus retained (Sec. 4.1)")
     else:
         pre_use = filter_pretrain_corpus(pre_df, split, te_df, held_d, held_p, cfg)
 
@@ -84,16 +65,14 @@ def run_single_seed(dataset: str, split: str, seed: int, cfg: Dict = CFG,
     ck = os.path.join(cfg["out_dir"], f"{variant}_{dataset}_{split}_seed{seed}.pt")
     torch.save({"state_dict": model.state_dict(), "cfg": cfg,
                 "metrics": metrics, "variant": variant}, ck)
-    print(f"[save] checkpoint -> {ck}")
 
-    del model
     if DEVICE == "cuda":
         torch.cuda.empty_cache()
     return metrics
 
 
 def summarise(results: List[Dict], keys=("ci", "mse", "pearson_r")) -> Dict:
-    """Mean +/- std across seeds (Sec. 4.1)."""
+     
     out = {}
     for k in keys:
         v = np.array([r[k] for r in results], dtype=np.float64)
@@ -103,13 +82,7 @@ def summarise(results: List[Dict], keys=("ci", "mse", "pearson_r")) -> Dict:
 
 def paired_bootstrap_ci(diffs: np.ndarray, n_boot: int = 10000,
                         alpha: float = 0.05, seed: int = 0) -> Tuple[float, float]:
-    """
-    Percentile bootstrap CI for the mean paired difference across seeds.
-
-    POWER WARNING: with three seeds this interval is wide and weakly
-    informative.  It is reported for transparency, not as strong evidence.
-    Use five or more seeds for a defensible interval.
-    """
+    
     rng = np.random.default_rng(seed)
     n = len(diffs)
     if n < 2:
@@ -120,13 +93,7 @@ def paired_bootstrap_ci(diffs: np.ndarray, n_boot: int = 10000,
 
 
 def run_ablation(dataset: str, split: str, seeds: List[int], cfg: Dict = CFG) -> Dict:
-    """
-    Architectural ablation (Sec. 4.6, Table 7).
-
-    Both arms see identical partitions per seed - build_splits is seeded
-    identically - so the per-seed differences are genuinely paired and the
-    bootstrap CI below is meaningful.
-    """
+    
     rows = {"vanilla": [], "simcf": []}
     for seed in seeds:
         for variant in ("vanilla", "simcf"):
@@ -135,12 +102,10 @@ def run_ablation(dataset: str, split: str, seeds: List[int], cfg: Dict = CFG) ->
     out: Dict = {"dataset": dataset, "split": split, "seeds": seeds,
                  "per_seed": rows, "metrics": {}}
 
-    print("\n" + "=" * 80)
-    print(f"ABLATION (Sec. 4.6)  dataset={dataset}  split={split}  seeds={seeds}")
-    print("=" * 80)
+     
     print(f"{'Metric':7s} {'VanillaLM+MLP':>18s} {'SimCF-DTBA':>18s} "
           f"{'Delta':>11s} {'paired 95% CI':>22s}")
-    print("-" * 80)
+     
     for key in ("ci", "mse"):
         v = np.array([r[key] for r in rows["vanilla"]], dtype=np.float64)
         s = np.array([r[key] for r in rows["simcf"]], dtype=np.float64)
@@ -155,21 +120,18 @@ def run_ablation(dataset: str, split: str, seeds: List[int], cfg: Dict = CFG) ->
         print(f"{key.upper():7s} {v.mean():>10.4f}+/-{v.std(ddof=0):<6.4f} "
               f"{s.mean():>10.4f}+/-{s.std(ddof=0):<6.4f} "
               f"{d.mean():>+11.4f} [{lo:+.4f}, {hi:+.4f}]")
-    print("-" * 80)
-    print("Delta = SimCF-DTBA - VanillaLM+MLP  (CI: higher better, MSE: lower better)")
-    print("If the 95% CI for Delta CI crosses zero, the ablation does NOT support a")
-    print("reliable gain; report that honestly rather than the point estimate alone.")
-
+    
+     
     os.makedirs(cfg["out_dir"], exist_ok=True)
     p = os.path.join(cfg["out_dir"], f"ablation_{dataset}_{split}.json")
     with open(p, "w") as f:
         json.dump(out, f, indent=2, default=str)
-    print(f"\n[save] ablation summary -> {p}")
+     
     return out
 
 
 def run_all(cfg: Dict = CFG, seeds: List[int] | None = None) -> Dict:
-    """Reproduce every table in the paper, end to end."""
+    
     seeds = seeds or cfg["seeds"]
     plan = [
         ("Tables 4-5 (cold-split, He et al. protocol)",
