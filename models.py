@@ -1,37 +1,17 @@
-"""
-Model components.
-
-  AlphaAdapter    alpha-gated bottleneck adapter          (Sec. 3.2.2 / 3.3.2)
-  DrugEncoder     frozen ChemBERTa-2 + optional adapter   (Sec. 3.2)
-  ProteinEncoder  frozen ESM-2 650M + optional adapter    (Sec. 3.3)
-  PerceiverIO     asymmetry-preserving fusion             (Sec. 3.4)
-  MLPHead         regression head                         (Sec. 3.4)
-  SimCFDTBA       full proposed model
-  VanillaLMMLP    controlled ablation baseline            (Sec. 4.6)
-"""
 
 from __future__ import annotations
-
 from typing import Dict, List, Tuple
-
 import esm as esm_lib
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel, AutoTokenizer
-
 from .chem import clean_seq
 from .config import DEVICE
 
 
 def masked_mean(H: torch.Tensor, mask: torch.Tensor | None) -> torch.Tensor:
-    """
-    Mean-pool over the sequence axis, ignoring padded positions.
-
-    Used by the VanillaLM+MLP ablation baseline (Sec. 4.6).  Padding is masked
-    out so the baseline is not artificially weakened by averaging over pad
-    tokens - an ablation only means something if the baseline is honest.
-    """
+     
     if mask is None:
         return H.mean(dim=1)
     m = mask.unsqueeze(-1).to(H.dtype)
@@ -39,14 +19,7 @@ def masked_mean(H: torch.Tensor, mask: torch.Tensor | None) -> torch.Tensor:
 
 
 class AlphaAdapter(nn.Module):
-    """
-    alpha-gated bottleneck adapter (Eqs. 3-4 / 6-7).
-
-    Near-identity at initialisation (alpha = 1e-2, small weights), so the
-    frozen backbone's chemical/evolutionary priors are preserved and only
-    gradually re-shaped by the contrastive objectives.
-    """
-
+   
     def __init__(self, d_in: int, m: int, alpha_init: float):
         super().__init__()
         self.ln1 = nn.LayerNorm(d_in)
@@ -63,12 +36,7 @@ class AlphaAdapter(nn.Module):
 
 
 class _EmbedCache:
-    """
-    FIFO cache for frozen backbone outputs (Sec. 5: embeddings are cached).
-    Safe because the backbones never update: the same input always maps to the
-    same representation for the whole run.
-    """
-
+    
     def __init__(self, enabled: bool, max_entries: int):
         self.enabled = enabled
         self.max_entries = max_entries
@@ -106,16 +74,7 @@ def _rebuild_padded(cached: List[torch.Tensor], d: int):
 
 
 class DrugEncoder(nn.Module):
-    """
-    Frozen ChemBERTa-2 (+ optional alpha-gated adapter), Sec. 3.2.
-
-    `use_adapter=False` exposes the raw frozen backbone, which is what the
-    VanillaLM+MLP ablation baseline consumes (Sec. 4.6).
-
-    The hidden size is read from the checkpoint rather than hardcoded, so
-    d_drug always matches the model named in config.py.
-    """
-
+    
     def __init__(self, cfg: Dict, use_adapter: bool = True):
         super().__init__()
         self.tokenizer = AutoTokenizer.from_pretrained(cfg["chemberta_name"])
@@ -154,13 +113,7 @@ class DrugEncoder(nn.Module):
 
 
 class ProteinEncoder(nn.Module):
-    """
-    Frozen ESM-2 650M (+ optional alpha-gated adapter), Sec. 3.3.
-
-    `use_adapter=False` exposes the raw frozen backbone for VanillaLM+MLP
-    (Sec. 4.6).  Residue-level resolution is kept (Eq. 5): BOS/EOS are
-    stripped and padding is tracked in the mask.
-    """
+   
 
     def __init__(self, cfg: Dict, use_adapter: bool = True):
         super().__init__()
@@ -208,15 +161,7 @@ class ProteinEncoder(nn.Module):
 
 
 class PerceiverIO(nn.Module):
-    """
-    Asymmetry-preserving fusion bottleneck (Sec. 3.4).
-
-    Drug and protein token sequences are projected to a shared width, tagged
-    with modality embeddings, and cross-attended into a fixed set of latents,
-    decoupling cost from input length while preserving which modality each
-    token came from.
-    """
-
+    
     def __init__(self, cfg: Dict, d_drug: int, d_prot: int):
         super().__init__()
         D, M = cfg["d_shared"], cfg["perceiver_M"]
@@ -251,14 +196,7 @@ class PerceiverIO(nn.Module):
 
 
 class MLPHead(nn.Module):
-    """
-    Regression head (Sec. 3.4).
-
-    `d_in` defaults to d_shared for the full model; VanillaLM+MLP passes
-    d_drug + d_prot.  The architecture (Linear -> BN -> ReLU -> Dropout ->
-    Linear) and hidden width are identical in both cases, as Sec. 4.6 requires.
-    """
-
+   
     def __init__(self, cfg: Dict, d_in: int | None = None):
         super().__init__()
         D = cfg["d_shared"] if d_in is None else int(d_in)
@@ -291,24 +229,7 @@ class SimCFDTBA(nn.Module):
 
 
 class VanillaLMMLP(nn.Module):
-    """
-    Controlled ablation baseline (Sec. 4.6, Table 7).
-
-    Identical frozen ChemBERTa-2 and ESM-2 backbones as SimCF-DTBA, but BOTH
-    principal architectural contributions are removed:
-
-      * no alpha-gated adapter calibration -> ablates curriculum Stages 1-2
-        (similarity-grounded manifold construction)
-      * no Perceiver IO bottleneck         -> ablates curriculum Stage 3
-        (asymmetry-preserving cross-modal fusion)
-
-    Replaced by direct concatenation of mean-pooled backbone embeddings fed to
-    the same MLP head.  Held constant: backbone encoders, head architecture,
-    training data, evaluation protocol.  Consequently only the supervised
-    Huber stage is trained: there are no adapters and no fusion module for a
-    contrastive objective to act on.
-    """
-
+   
     variant = "vanilla"
 
     def __init__(self, cfg: Dict):
