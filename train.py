@@ -1,22 +1,14 @@
-"""
-Training loops and the four-stage sequential freeze curriculum (Sec. 3.5.3).
-"""
-
 from __future__ import annotations
-
 import copy
 import math
 from typing import Dict
-
 import numpy as np
 import torch
 import torch.nn as nn
-
 from .config import DEVICE
 from .losses import HybridLoss, SoftSupConLoss, huber_loss
 from .models import MLPHead
 from .similarity import blosum62_matrix, tanimoto_matrix
-
 
 def freeze(module: nn.Module) -> None:
     for p in module.parameters():
@@ -36,18 +28,8 @@ def make_opt(param_groups, cfg: Dict):
 
 
 def train_stage(name, model, opt, sch, train_loader, val_loader, loss_fn, cfg) -> float:
-    """
-    Train one curriculum stage to convergence.
-
-    Convergence criterion, stated explicitly so it can be written into the
-    manuscript: stop when the stage validation loss fails to improve by more
-    than min_delta = 1e-5 for `patience` = 10 consecutive epochs, or when
-    max_epochs is reached; then restore the best-validation checkpoint.
-
-    Non-finite batches are skipped rather than poisoning the average.
-    """
+     
     best_val, wait, best_state = float("inf"), 0, None
-
     for epoch in range(1, cfg["max_epochs"] + 1):
         model.train()
         t_losses = []
@@ -93,12 +75,6 @@ def train_stage(name, model, opt, sch, train_loader, val_loader, loss_fn, cfg) -
 
 
 def build_loss_fns(cfg: Dict):
-    """
-    Return the four stage loss closures.
-
-    Stages 1-3 are label-agnostic: `labels` is accepted for a uniform
-    signature but never read.
-    """
     hybrid = HybridLoss(cfg).to(DEVICE)
     soft = SoftSupConLoss(cfg).to(DEVICE)
 
@@ -122,37 +98,17 @@ def build_loss_fns(cfg: Dict):
 
 def run_curriculum(model, pre_train_loader, pre_val_loader,
                    sup_train_loader, sup_val_loader, cfg) -> None:
-    """
-    Four-stage sequential freeze curriculum (Sec. 3.5.3).
-
-    Stages 1-3 are label-agnostic and run on the leakage-filtered BindingDB
-    corpus; Stage 4 is supervised regression on the target dataset's training
-    split.  Each component trains to convergence in isolation before the next
-    is introduced, so no cross-stage gradient interference is possible: once
-    frozen, a component receives no gradient from any later loss.
-    """
     drug_loss, prot_loss, fusion_loss, pred_loss = build_loss_fns(cfg)
     alr = cfg["lr"] * cfg["adapter_lr_ratio"]
     freeze(model)
-
-    # ---- Stage 1: drug adapter ------------------------------------------
-    print("\n" + "=" * 64 + "\nSTAGE 1 - Drug adapter (L_drug, label-agnostic)\n" + "=" * 64)
     unfreeze(model.drug.adapter)
     opt, sch = make_opt([{"params": model.drug.adapter.parameters(), "lr": cfg["lr"]}], cfg)
     train_stage("S1-Drug", model, opt, sch, pre_train_loader, pre_val_loader, drug_loss, cfg)
     freeze(model.drug.adapter)
-
-    # ---- Stage 2: protein adapter ---------------------------------------
-    print("\n" + "=" * 64 + "\nSTAGE 2 - Protein adapter (L_prot, label-agnostic)\n" + "=" * 64)
     unfreeze(model.prot.adapter)
     opt, sch = make_opt([{"params": model.prot.adapter.parameters(), "lr": cfg["lr"]}], cfg)
     train_stage("S2-Prot", model, opt, sch, pre_train_loader, pre_val_loader, prot_loss, cfg)
     freeze(model.prot.adapter)
-
-    # ---- Stage 3: Perceiver IO + partial adapter thaw --------------------
-    print("\n" + "=" * 64 +
-          f"\nSTAGE 3 - Perceiver IO (L_fusion) [adapters lr x {cfg['adapter_lr_ratio']}]\n"
-          + "=" * 64)
     unfreeze(model.fusion)
     unfreeze(model.drug.adapter)
     unfreeze(model.prot.adapter)
@@ -165,12 +121,7 @@ def run_curriculum(model, pre_train_loader, pre_val_loader,
     freeze(model.fusion)
     freeze(model.drug.adapter)
     freeze(model.prot.adapter)
-
-    # ---- Stage 4: MLP head + partial adapter thaw (supervised) -----------
-    print("\n" + "=" * 64 +
-          f"\nSTAGE 4 - MLP head (L_pred, supervised) [adapters lr x {cfg['adapter_lr_ratio']}]\n"
-          + "=" * 64)
-    model.head = MLPHead(cfg).to(DEVICE)     # reinitialise from scratch
+    model.head = MLPHead(cfg).to(DEVICE)      
     unfreeze(model.head)
     unfreeze(model.drug.adapter)
     unfreeze(model.prot.adapter)
@@ -184,20 +135,10 @@ def run_curriculum(model, pre_train_loader, pre_val_loader,
 
 
 def run_vanilla_training(model, sup_train_loader, sup_val_loader, cfg) -> None:
-    """
-    Training for the VanillaLM+MLP ablation baseline (Sec. 4.6).
-
-    The backbones are frozen and there are no adapters or fusion module, so
-    only the MLP head is trainable.  It is trained with the same supervised
-    Huber objective, the same optimiser settings, the same convergence
-    criterion, and on the same data as Stage 4 of the full model - so the only
-    difference between the two arms of the ablation is the presence or absence
-    of adapter calibration and Perceiver IO fusion.
-    """
+     
     _, _, _, pred_loss = build_loss_fns(cfg)
     freeze(model)
     unfreeze(model.head)
     opt, sch = make_opt([{"params": model.head.parameters(), "lr": cfg["lr"]}], cfg)
-    print("\n" + "=" * 64 + "\nVanillaLM+MLP - supervised head only (L_pred)\n" + "=" * 64)
     train_stage("Vanilla-Pred", model, opt, sch, sup_train_loader, sup_val_loader, pred_loss, cfg)
     print("[vanilla] training complete.")
