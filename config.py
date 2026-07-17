@@ -1,8 +1,7 @@
 """
 Global configuration, device selection, column names, and seeding.
-
-All hyperparameters live here so a run can be reproduced from this file alone.
-Section numbers in comments refer to the manuscript.
+All hyperparameters so a run can be reproduced from this file .
+ 
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ COL_AFF = "affinity"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 CFG: Dict = {
-    # ---- Backbones (Sec. 4.4) -------------------------------------------
+    # ---- Backbones   -------------------------------------------
     # Drug backbone.  DrugEncoder reads the hidden size from the checkpoint at
     # load time, so d_drug always matches the model named here.
     #   DeepChem/ChemBERTa-77M-MLM        -> ChemBERTa-2, 77M, d_drug = 384
@@ -34,11 +33,11 @@ CFG: Dict = {
     "esm_name": "esm2_t33_650M_UR50D",   # 650M / 33 layers / d_prot = 1280
     "esm_repr_layer": 33,
 
-    # ---- Adapter (Sec. 3.2.2) -------------------------------------------
+    # ---- Adapter   -------------------------------------------
     "adapter_m": 128,
     "alpha_init": 1e-2,
 
-    # ---- Perceiver IO (Sec. 3.4) ----------------------------------------
+    # ---- Perceiver IO  ----------------------------------------
     "perceiver_M": 128,
     "perceiver_L": 6,
     "perceiver_heads": 8,
@@ -48,12 +47,12 @@ CFG: Dict = {
     "mlp_hidden": 256,
     "mlp_dropout": 0.2,
 
-    # ---- Fingerprints, ECFP4 (Sec. 3.5) ---------------------------------
+    # ---- Fingerprints, ECFP4   ---------------------------------
     "fp_radius": 2,
     "fp_bits": 2048,
     "fp_chirality": False,
 
-    # ---- Contrastive objectives (Sec. 3.5, Table 3) ---------------------
+    # ---- Contrastive objectives   ---------------------
     "temperature": 0.07,
     "top_k": 5,
     "hard_neg_thr": 0.3,        # delta in |S_d - S_p| > delta      (Step 4)
@@ -63,12 +62,12 @@ CFG: Dict = {
     "sim_threshold": 0.4,
     "agreement": "product",     # product | geometric | harmonic
 
-    # ---- BLOSUM62 alignment (Sec. 3.3.3) --------------------------------
+    # ---- BLOSUM62 alignment   --------------------------------
     "blosum_gap_open": -11.0,   # NCBI BLASTP defaults for BLOSUM62
     "blosum_gap_extend": -1.0,
     "blosum_mode": "global",
 
-    # ---- Optimisation (Table 3) -----------------------------------------
+    # ---- Optimisation  -----------------------------------------
     "lr": 1e-4,
     "adapter_lr_ratio": 0.01,
     "weight_decay": 1e-2,
@@ -80,16 +79,16 @@ CFG: Dict = {
     "cosine_tmax": 50,
     "cosine_eta_min": 1e-6,
 
-    # ---- Sequence limits (Sec. 4.4) -------------------------------------
+    # ---- Sequence limits   -------------------------------------
     "max_drug_len": 128,
     "max_prot_len": 1022,       # ESM-2 positional limit (1024 - BOS/EOS)
 
-    # ---- Protocol (Sec. 4.1) --------------------------------------------
+    # ---- Protocol   --------------------------------------------
     "seeds": [42, 123, 456],
     "frac": [0.8, 0.1, 0.1],    # He et al. train/valid/test fractions
     "pretrain_val_frac": 0.05,
 
-    # ---- Stricter protocols (Sec. 4.8) ----------------------------------
+    # ---- Stricter protocols  ---------------------------------
     "seqid_threshold": 0.40,    # CD-HIT identity cutoff
     "cdhit_bin": "cd-hit",      # falls back to internal clustering if absent
 
