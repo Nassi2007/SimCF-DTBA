@@ -1,11 +1,4 @@
-"""
-Training objectives.
-
-  HybridLoss      intra-modal manifold calibration        (Sec. 3.5.1)
-  SoftSupConLoss  cross-modal alignment + Steps 3-4       (Sec. 3.5, 3.5.2)
-  huber_loss      supervised regression objective
-"""
-
+ 
 from __future__ import annotations
 
 from typing import Dict, Tuple
@@ -18,19 +11,7 @@ from .similarity import agreement_weights
 
 
 class HybridLoss(nn.Module):
-    """
-    Intra-modal manifold calibration (Sec. 3.5.1):
-
-        L = lambda * L_margin + (1 - lambda) * L_InfoNCE
-
-    Label-agnostic: supervision comes only from the similarity oracle S, never
-    from binding labels.  Used for Stage 1 (drug, Tanimoto) and Stage 2
-    (protein, BLOSUM62).
-
-    The InfoNCE term masks the diagonal with a large finite negative rather
-    than -inf, and gates positives with torch.where, so that empty-positive
-    rows cannot produce -inf * 0 = NaN.
-    """
+     
 
     def __init__(self, cfg: Dict):
         super().__init__()
@@ -77,27 +58,7 @@ class HybridLoss(nn.Module):
 
 
 class SoftSupConLoss(nn.Module):
-    """
-    Cross-modal alignment with explicit negative construction
-    (Sec. 3.5.2 together with Sec. 3.5 Steps 3-4).  Used for Stage 3.
-
-    Step 3 - positives:
-        P(i) = TopK_{j != i} w_ij,  where w = A(S_d, S_p)          (Eq. 14)
-
-    Step 4 - negatives:
-        Hard negatives are pairs with |S_d,ij - S_p,ij| > delta, which have
-        w_ij ~ 0 by construction and force the model to distinguish
-        cross-modal binding specificity from unimodal structural similarity.
-        Random negatives are sampled uniformly from the remainder of the
-        batch, at random:hard = `hard_random_ratio` (paper: 1:3).
-
-    Only P(i) and the sampled negatives enter the partition function; all
-    other batch entries are masked out.  If a row has no hard negatives in a
-    given batch, the full random pool is used so the anchor still has a valid
-    partition function.  Setting hard_neg_thr >= 1 disables Step 4 and
-    recovers a plain full-batch denominator.
-    """
-
+    
     def __init__(self, cfg: Dict):
         super().__init__()
         self.tau = cfg["temperature"]
@@ -108,16 +69,14 @@ class SoftSupConLoss(nn.Module):
 
     def _build_masks(self, S_d: torch.Tensor, S_p: torch.Tensor,
                      w: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Return (positive_mask, selected_negative_mask) for the batch."""
+        
         N, dev = w.size(0), w.device
         diag = torch.eye(N, device=dev, dtype=torch.bool)
 
-        # ---- Step 3: Top-K positives by agreement weight (Eq. 14) --------
         k = min(self.top_k, N - 1)
         thr = w.masked_fill(diag, -1.0).topk(k, dim=1).values[:, -1:]
         pos = (w >= thr.clamp(min=1e-12)) & ~diag
-
-        # ---- Step 4: hard + random negative construction -----------------
+        
         cand = (~pos) & (~diag)
         hard = ((S_d - S_p).abs() > self.delta) & cand
         rand_pool = cand & (~hard)
@@ -164,5 +123,4 @@ class SoftSupConLoss(nn.Module):
 
 
 def huber_loss(y_hat: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-    """Supervised regression objective for Stage 4 (delta = 1.0)."""
     return F.huber_loss(y_hat, y, delta=1.0)
